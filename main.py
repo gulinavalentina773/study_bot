@@ -3,22 +3,13 @@
 # This program is dedicated to the public domain under the CC0 license.
 
 """
-Simple Bot to reply to Telegram messages.
-
-First, a few handler functions are defined. Then, those functions are passed to
-the Application and registered at their respective places.
-Then, the bot is started and runs until we press Ctrl-C on the command line.
-
-Usage:
-Basic Echobot example, repeats messages.
-Press Ctrl-C on the command line or send a signal to the process to stop the
-bot.
+Basic example for a bot that uses inline keyboards. For an in-depth explanation, check out
+ https://github.com/python-telegram-bot/python-telegram-bot/wiki/InlineKeyboard-Example.
 """
-
 import logging
 
-from telegram import ForceReply, Update
-from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes, ConversationHandler
 
 # Enable logging
 logging.basicConfig(
@@ -30,51 +21,91 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 
-# Define a few command handlers. These usually take the two arguments update and
-# context.
+# Stages
+START_ROUTES, END_ROUTES = range(2)
+# Callback data
+STAGE_ONE, STAGE_TWO, STAGE_THREE, STAGE_FOUR = range(4)
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Send a message when the command /start is issued."""
-    user = update.effective_user
-    await update.message.reply_html(
-        rf"Привет {user.mention_html()}!",
-        reply_markup=ForceReply(selective=True),
+    """Sends a message with three inline buttons attached."""
+    keyboard = [
+        [
+            InlineKeyboardButton("Python", callback_data="1"),
+            InlineKeyboardButton("SQL", callback_data="2"),
+            InlineKeyboardButton("PHP", callback_data="3"),
+            InlineKeyboardButton("Telegram", callback_data="4"),
+            InlineKeyboardButton("Html", callback_data="5"),
+        ],
+        [InlineKeyboardButton("Random", callback_data="0")],
+    ]
+
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await update.message.reply_text("Выберите курс:", reply_markup=reply_markup)
+
+    return START_ROUTES
+
+async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Parses the CallbackQuery and updates the message text."""
+    query = update.callback_query
+
+    # CallbackQueries need to be answered, even if no notification to the user is needed
+    # Some clients may have trouble otherwise. See https://core.telegram.org/bots/api#callbackquery
+    await query.answer()
+
+
+    await query.edit_message_text(text=f"Selected option: {query.data}")
+
+
+async def one(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Show new choice of buttons"""
+    query = update.callback_query
+    await query.answer()
+    keyboard = [
+        [
+            InlineKeyboardButton("3", callback_data=str(STAGE_THREE)),
+            InlineKeyboardButton("4", callback_data=str(STAGE_FOUR)),
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.edit_message_text(
+        text="First CallbackQueryHandler, Choose a route", reply_markup=reply_markup
     )
-
-
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Send a message when the command /help is issued."""
-    await update.message.reply_text("Help!")
-
-
-async def about_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Send a message when the command /help is issued."""
-
-    await update.message.reply_text("Lorem Ipsum - это текст-рыба, чан") 
-
-
-async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Echo the user message."""
-    await update.message.reply_text(update.message.text)
+    return START_ROUTES
 
 
 def main() -> None:
-    """Start the bot."""
+    """Run the bot."""
     # Create the Application and pass it your bot's token.
     TOKEN='6954997218:AAHMJY46MfbeEUKwoA4UsAXeF9-rkD2MD34'
-
+    
     application = Application.builder().token(TOKEN).build()
 
-    # on different commands - answer in Telegram
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", help_command))
 
-    application.add_handler(CommandHandler("about", about_command))
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("start", start)],
+        states={
+            START_ROUTES: [
+                CallbackQueryHandler(one, pattern="^" + str(STAGE_ONE) + "$"),
+                #CallbackQueryHandler(two, pattern="^" + str(TWO) + "$"),
+                #CallbackQueryHandler(three, pattern="^" + str(THREE) + "$"),
+                #CallbackQueryHandler(four, pattern="^" + str(FOUR) + "$"),
+            ],
+           # END_ROUTES: [
+                #CallbackQueryHandler(start_over, pattern="^" + str(ONE) + "$"),
+                #CallbackQueryHandler(end, pattern="^" + str(TWO) + "$"),
+            #],
+        },
+        fallbacks=[CommandHandler("start", start)],
+    )
 
-    # on non command i.e message - echo the message on Telegram
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
+    # Add ConversationHandler to application that will be used for handling updates
+    application.add_handler(conv_handler)
 
     # Run the bot until the user presses Ctrl-C
     application.run_polling(allowed_updates=Update.ALL_TYPES)
+
 
 
 if __name__ == "__main__":
